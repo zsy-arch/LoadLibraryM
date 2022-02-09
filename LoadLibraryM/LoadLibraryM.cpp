@@ -23,7 +23,7 @@ BOOL LoadLibraryM(LPCSTR lpszLibName, ADDR_M* paddrBase)
 	bResult = ResolveIAT(ppkPacket);
 	if (!bResult)
 		return FALSE;
-	std::cout << "[+] Resolve image IAT successfully" << std::endl;
+	std::cout << "[+] resolve image IAT successfully" << std::endl;
 	bResult = ImageProtect(ppkPacket);
 	if (!bResult)
 		return FALSE;
@@ -131,11 +131,7 @@ BOOL ImageAlloc(PE_PACKET* ppkPacket, ADDR_M* paddrImageBase)
 	ppkPacket->lpImage = reinterpret_cast<LPBYTE>(lpvImage);
 	BOOL bResult;
 	bResult = CopyRegions(ppkPacket);
-	if (!bResult)
-	{
-		return FALSE;
-	}
-	return TRUE;
+	return bResult;
 }
 
 BOOL ImageReloc(PE_PACKET* ppkPacket)
@@ -175,16 +171,16 @@ BOOL CopyRegions(PE_PACKET* ppkPacket)
 	DWORD dwNumSection = ppkPacket->nt_header->FileHeader.NumberOfSections;
 	for (DWORD i = 0; i < dwNumSection; i++)
 	{
-		DWORD dwSize = 0;
+		DWORD dwRealSize = 0;
 		if (ppkPacket->section_header[i].SizeOfRawData > 0)
 		{
-			dwSize = CalcAlignedSize(ppkPacket->nt_header->OptionalHeader.FileAlignment, ppkPacket->section_header[i].SizeOfRawData);
+			dwRealSize = CalcAlignedSize(ppkPacket->nt_header->OptionalHeader.FileAlignment, ppkPacket->section_header[i].SizeOfRawData);
 			CopyMemory(
 				ppkPacket->lpImage + ppkPacket->section_header[i].VirtualAddress,
 				ppkPacket->lpBuf + ppkPacket->section_header[i].PointerToRawData,
-				dwSize
+				dwRealSize
 			);
-			dwSize = CalcAlignedSize(ppkPacket->nt_header->OptionalHeader.SectionAlignment, ppkPacket->section_header[i].SizeOfRawData);
+			dwRealSize = CalcAlignedSize(ppkPacket->nt_header->OptionalHeader.SectionAlignment, ppkPacket->section_header[i].SizeOfRawData);
 		}
 	}
 	return TRUE;
@@ -241,9 +237,12 @@ BOOL ImageProtect(PE_PACKET* ppkPacket)
 			dwProtect,
 			&dwOldProtect
 		);
-		return bResult;
+		if (!bResult)
+		{
+			return FALSE;
+		}
 	}
-	return FALSE;
+	return TRUE;
 }
 
 BOOL ResolveIAT(PE_PACKET* ppkPacket)
@@ -258,7 +257,7 @@ BOOL ResolveIAT(PE_PACKET* ppkPacket)
 		DWORD dwNameRva = pImportDescriptor[i].Name;
 		LPCSTR lpszName = reinterpret_cast<LPCSTR>(ppkPacket->lpImage + dwNameRva);
 		HMODULE hMod = LoadLibraryA(lpszName);
-		if (!hMod) 
+		if (!hMod)
 			return FALSE;
 		DWORD dwINTRva = pImportDescriptor[i].OriginalFirstThunk;
 		DWORD dwIATRva = pImportDescriptor[i].FirstThunk;
@@ -269,9 +268,10 @@ BOOL ResolveIAT(PE_PACKET* ppkPacket)
 			PIMAGE_IMPORT_BY_NAME pImpName = reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(ppkPacket->lpImage + pThunkData->u1.AddressOfData);
 			LPCSTR lpszProcName = pImpName->Name;
 			ADDR_M addrProc = reinterpret_cast<ADDR_M>(GetProcAddress(hMod, lpszProcName));
-			if (!addrProc) 
-				return FALSE;
-			*paddrIAT = addrProc;
+			if (addrProc)
+			{
+				*paddrIAT = addrProc;
+			}
 			pThunkData++;
 			paddrIAT++;
 		}

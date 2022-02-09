@@ -2,9 +2,10 @@
 //
 
 #include <iostream>
-
+#include <Windows.h>
 int main()
 {
+    MessageBox(NULL, L"Hello World!", L"", MB_OKCANCEL);
     std::cout << "Hello World!\n";
 }
 
